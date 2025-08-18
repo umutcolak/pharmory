@@ -1,0 +1,47 @@
+name: pharmory
+description: AI destekli ilaç bilgi uygulaması
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # UI & State Management
+  cupertino_icons: ^1.0.6
+  provider: ^6.0.5
+  
+  # HTTP & API
+  http: ^1.1.0
+  
+  # Image & File handling
+  image_picker: ^1.0.4
+  file_picker: ^6.1.1
+  
+  # Text to Speech
+  flutter_tts: ^3.8.3
+  
+  # OCR
+  google_ml_kit: ^0.16.3
+  
+  # Local storage
+  shared_preferences: ^2.2.2
+  
+  # Utils
+  logger: ^2.0.2+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/
