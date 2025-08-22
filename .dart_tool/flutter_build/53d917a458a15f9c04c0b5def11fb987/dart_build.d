@@ -1,1 +1,0 @@
- /Users/tugba/Desktop/pharmory/.dart_tool/flutter_build/53d917a458a15f9c04c0b5def11fb987/dart_build_result.json: 
