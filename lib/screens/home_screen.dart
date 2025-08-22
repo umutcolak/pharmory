@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import '../providers/app_provider.dart';
 import '../services/api_service.dart';
 import '../services/ocr_service.dart';
-import '../models/api_response.dart';
 import '../models/medication.dart';
 import 'result_screen.dart';
 import '../widgets/accessibility_controls.dart';
@@ -71,10 +69,18 @@ class _HomeScreenState extends State<HomeScreen> {
             MaterialPageRoute(
               builder: (context) => ResultScreen(medication: response.data!),
             ),
-          );
+          ).then((_) {
+            // Ana sayfaya döndükten sonra input'u temizle
+            _searchController.clear();
+          });
         }
       } else {
-        _showSnackBar(response.error ?? 'İlaç bulunamadı', isError: true);
+        String errorMessage = response.error ?? 'İlaç bulunamadı';
+        if (errorMessage.contains('inappropriate') || errorMessage.contains('uygunsuz')) {
+          _showSnackBar('⚠️ Uygunsuz içerik tespit edildi. Sadece ilaç aramalarına izin verilir.', isError: true);
+        } else {
+          _showSnackBar(errorMessage, isError: true);
+        }
       }
     } catch (e) {
       _showSnackBar('Bir hata oluştu: $e', isError: true);
@@ -85,8 +91,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Pick and process image
   Future<void> _pickImage(ImageSource source) async {
-    final appProvider = Provider.of<AppProvider>(context, listen: false);
-    
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: source,
@@ -150,55 +154,27 @@ class _HomeScreenState extends State<HomeScreen> {
             MaterialPageRoute(
               builder: (context) => ResultScreen(medication: response.data!),
             ),
-          );
+          ).then((_) {
+            // Ana sayfaya döndükten sonra input'u temizle
+            _searchController.clear();
+          });
         }
-              } else {
-          String errorMessage = response.error ?? 'Fotoğraftan ilaç bilgisi çıkarılamadı';
-          _showSnackBar(errorMessage, isError: true);
-          _clearSelectedImage();
-          
-          // If quota error, focus on text input
-          if (errorMessage.contains('quota')) {
-            FocusScope.of(context).requestFocus(_textFocusNode);
-            _showSnackBar('💡 İlaç adını yazarak arama yapabilirsiniz', isError: false);
-          }
+      } else {
+        String errorMessage = response.error ?? 'Fotoğraftan ilaç bilgisi çıkarılamadı';
+        _showSnackBar(errorMessage, isError: true);
+        _clearSelectedImage();
+        
+        // If quota error, focus on text input
+        if (errorMessage.contains('quota')) {
+          FocusScope.of(context).requestFocus(_textFocusNode);
+          _showSnackBar('💡 İlaç adını yazarak arama yapabilirsiniz', isError: false);
         }
+      }
     } catch (e) {
       _showSnackBar('Fotoğraf analizi sırasında hata oluştu: $e', isError: true);
       _clearSelectedImage();
     } finally {
       appProvider.setLoading(false);
-    }
-  }
-
-  // Search using OCR text
-  Future<void> _searchByOCR(String ocrText) async {
-    final appProvider = Provider.of<AppProvider>(context, listen: false);
-    
-    try {
-      final request = SearchRequest(
-        ocrText: ocrText,
-        language: appProvider.language,
-      );
-
-      final response = await _apiService.searchMedication(request);
-      
-      if (response.success && response.data != null) {
-        await appProvider.addToSearchHistory(response.data!.name);
-        
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ResultScreen(medication: response.data!),
-            ),
-          );
-        }
-      } else {
-        _showSnackBar(response.error ?? 'İlaç bilgisi bulunamadı', isError: true);
-      }
-    } catch (e) {
-      _showSnackBar('Arama sırasında hata oluştu: $e', isError: true);
     }
   }
 
@@ -255,97 +231,141 @@ class _HomeScreenState extends State<HomeScreen> {
             centerTitle: true,
           ),
           body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Accessibility controls
-                  const AccessibilityControls(),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Welcome text
-                  Text(
-                    'İlaç Bilgi Asistanınız',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  
-                  const SizedBox(height: 8),
-                  
-                  Text(
-                    'İlaç adını yazın veya prospektüsün fotoğrafını çekin',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  
-                  const SizedBox(height: 32),
-                  
-                  // Search input
-                  TextField(
-                    controller: _searchController,
-                    focusNode: _textFocusNode,
-                    decoration: const InputDecoration(
-                      hintText: 'İlaç adını girin (örn: Parol, Aspirin)',
-                      prefixIcon: Icon(Icons.search),
-                      suffixIcon: Icon(Icons.medication),
-                    ),
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => _searchMedication(),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Search button
-                  ElevatedButton(
-                    onPressed: appProvider.isLoading ? null : _searchMedication,
-                    child: appProvider.isLoading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('ARA'),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Divider with "VEYA"
-                  Row(
-                    children: [
-                      const Expanded(child: Divider()),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          'VEYA',
-                          style: Theme.of(context).textTheme.bodyMedium,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Accessibility controls
+                    const AccessibilityControls(),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Combined title and instructions
+                    Card(
+                      elevation: 1,
+                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.medication_outlined,
+                                  color: Theme.of(context).colorScheme.primary,
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'İlaç Bilgi Asistanınız - Nasıl Kullanılır?',
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            
+                            const SizedBox(height: 8),
+                            
+                            // Text input instructions
+                            Text(
+                              '📝 İlaç Adı Yazarak:',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '• Ambalajda gördüğünüz tam ilaç adını yazın\n• Doz bilgisini de ekleyin\n  (Majezik yerine "Majezik Flurbiprofen 100mg" yazın)',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            
+                            const SizedBox(height: 8),
+                            
+                            // Photo instructions
+                            Text(
+                              '📷 Fotoğraf Çekerek:',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '• İlaç kutusunun ön yüzünü çekin\n• Prospektüsün ilk sayfasının giriş bölümünü çekin\n• İlaç adının net görüldüğünden emin olun',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
                         ),
                       ),
-                      const Expanded(child: Divider()),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Camera button
-                  OutlinedButton.icon(
-                    onPressed: appProvider.isLoading ? null : _showImageSourceDialog,
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Prospektüs Fotoğrafı Çek'),
-                  ),
-                  
-                  const SizedBox(height: 32),
-                  
-                  // Search history
-                  if (appProvider.searchHistory.isNotEmpty) ...[
-                    Text(
-                      'Son Aramalar',
-                      style: Theme.of(context).textTheme.headlineSmall,
                     ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: SearchHistoryWidget(
+                    
+                    const SizedBox(height: 20),
+                    
+                    // Search input
+                    TextField(
+                      controller: _searchController,
+                      focusNode: _textFocusNode,
+                      decoration: const InputDecoration(
+                        hintText: 'Tam ilaç adını yazın (örn: Parol 500mg, Aspirin Cardio 100mg)',
+                        prefixIcon: Icon(Icons.search),
+                        suffixIcon: Icon(Icons.medication),
+                      ),
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _searchMedication(),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Search button
+                    ElevatedButton(
+                      onPressed: appProvider.isLoading ? null : _searchMedication,
+                      child: appProvider.isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('ARA'),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Divider with "VEYA"
+                    Row(
+                      children: [
+                        const Expanded(child: Divider()),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'VEYA',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                        const Expanded(child: Divider()),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Camera button
+                    OutlinedButton.icon(
+                      onPressed: appProvider.isLoading ? null : _showImageSourceDialog,
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Prospektüs Fotoğrafı Çek'),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Search history
+                    if (appProvider.searchHistory.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      SearchHistoryWidget(
                         searchHistory: appProvider.searchHistory,
                         onSearchTap: (searchTerm) {
                           _searchController.text = searchTerm;
@@ -353,9 +373,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                         onClearHistory: appProvider.clearSearchHistory,
                       ),
-                    ),
+                    ],
+                    
+                    // Bottom padding for scroll
+                    const SizedBox(height: 32),
                   ],
-                ],
+                ),
               ),
             ),
           ),

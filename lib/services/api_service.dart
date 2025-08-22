@@ -246,6 +246,12 @@ class ApiService {
   // Query Gemini for medication information (text only)
   Future<Medication?> _queryGemini(String medicationName, String language) async {
     try {
+      // Security check for inappropriate content
+      if (_containsInappropriateContent(medicationName)) {
+        _logger.w('Inappropriate content detected: $medicationName');
+        return null;
+      }
+      
       final prompt = _createPrompt(medicationName, language);
       
       final requestBody = {
@@ -523,6 +529,49 @@ Respond in this JSON format:
 
   // Get system prompt for Gemini
   // Get image analysis prompt for medication information
+  // Security check for inappropriate content
+  bool _containsInappropriateContent(String text) {
+    final String lowerText = text.toLowerCase().trim();
+    
+    // Check if it's clearly not a medication name
+    if (lowerText.length < 2) return true;
+    
+    // List of inappropriate keywords
+    final List<String> inappropriateWords = [
+      // Sexual content
+      'sex', 'porn', 'xxx', 'nude', 'naked', 'erotic',
+      // Violence/Drugs
+      'kill', 'murder', 'death', 'suicide', 'bomb', 'gun',
+      'cocaine', 'heroin', 'cannabis', 'marijuana', 'drugs',
+      // Turkish inappropriate terms
+      'seks', 'porno', 'çıplak', 'nü', 'erotik',
+      'öldür', 'ölüm', 'intihar', 'bomba', 'silah',
+      'kokain', 'eroin', 'esrar', 'uyuşturucu',
+      // Offensive terms
+      'fuck', 'shit', 'damn', 'bitch', 'asshole',
+      'amk', 'sik', 'göt', 'am', 'yarrak', 'orospu'
+    ];
+    
+    // Check for inappropriate words
+    for (String word in inappropriateWords) {
+      if (lowerText.contains(word)) {
+        return true;
+      }
+    }
+    
+    // Check for suspicious patterns
+    if (RegExp(r'[!@#$%^&*()_+=\[\]{}|;:",.<>?/~`]{3,}').hasMatch(lowerText)) {
+      return true;
+    }
+    
+    // Check for repeated characters (spam-like)
+    if (RegExp(r'(.)\1{4,}').hasMatch(lowerText)) {
+      return true;
+    }
+    
+    return false;
+  }
+
   String _getImageAnalysisPrompt(String language) {
     if (language == 'en') {
       return '''Analyze this medication image (box, package, or leaflet) and provide detailed information about the medication in JSON format.
@@ -552,6 +601,11 @@ If you cannot clearly identify the medication or read the text, respond with:
     } else {
       return '''Bu ilaç görselini (kutu, ambalaj veya prospektüs) analiz et ve ilacın detaylı bilgilerini JSON formatında ver.
 
+GÜVENLİK KURALLARI:
+- SADECE ilaç ve tıbbi ürün görselleri kabul et
+- Uygunsuz, pornografik içerik tespit edersen reddet
+- İlaç dışı görsel varsa analiz etme
+
 Görseli dikkatli incele ve şunları belirle:
 1. İlaç adı
 2. Etken maddeler
@@ -573,7 +627,10 @@ SADECE bu JSON formatında yanıt ver:
 }
 
 Eğer ilacı net olarak tanımlayamıyor veya metni okuyamıyorsan:
-{"error": "Görselden ilaç tanımlanamadı"}''';
+{"error": "Görselden ilaç tanımlanamadı"}
+
+Eğer uygunsuz içerik tespit edersen:
+{"error": "Uygunsuz içerik tespit edildi"}''';
     }
   }
 
@@ -581,6 +638,12 @@ Eğer ilacı net olarak tanımlayamıyor veya metni okuyamıyorsan:
     if (language == 'tr') {
       return '''
 Sen bir eczacılık uzmanısın. İlaçlar hakkında doğru, güvenilir ve anlaşılır bilgiler sağlıyorsun.
+
+GÜVENLİK KURALLARI:
+- SADECE ilaç ve tıbbi ürünler hakkında bilgi ver
+- Uygunsuz, pornografik, şiddet içerikli sorulara ASLA yanıt verme
+- Yasal olmayan madde/uyuşturucu sorularını reddet
+- Şüpheli istek varsa "Bu tür sorulara yanıt veremem" de
 
 KURALLAR:
 1. Sadece genel ilaç bilgileri ver, spesifik tıbbi tavsiye verme
@@ -604,6 +667,12 @@ Yanıtın MUTLAKA bu formatta olsun:
     } else {
       return '''
 You are a pharmaceutical expert providing accurate, reliable medication information.
+
+SECURITY RULES:
+- ONLY provide information about medications and medical products
+- NEVER respond to inappropriate, pornographic, or violent content
+- Reject questions about illegal substances/drugs
+- If suspicious request, respond "I cannot answer such questions"
 
 RULES:
 1. Only provide general medication information, no specific medical advice

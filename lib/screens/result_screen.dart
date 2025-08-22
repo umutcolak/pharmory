@@ -23,19 +23,34 @@ class ResultScreen extends StatefulWidget {
 class _ResultScreenState extends State<ResultScreen> {
   final TTSService _ttsService = TTSService();
   final ApiService _apiService = ApiService();
+  final TextEditingController _correctionController = TextEditingController();
   late Medication _currentMedication;
   bool _isUpdating = false;
+  bool? _isMedicationCorrect;
+  bool _showCorrectionField = false;
+  bool _hasValidCorrectionText = false;
 
   @override
   void initState() {
     super.initState();
     _currentMedication = widget.medication;
     _ttsService.initialize();
+    
+    // Listen to text changes for button state
+    _correctionController.addListener(() {
+      setState(() {
+        _hasValidCorrectionText = _correctionController.text.trim().isNotEmpty;
+      });
+    });
+    
+    // Check if should show history add info on first load
+    _checkInitialHistoryAdd();
   }
 
   @override
   void dispose() {
     _ttsService.stop();
+    _correctionController.dispose();
     super.dispose();
   }
 
@@ -103,6 +118,224 @@ class _ResultScreenState extends State<ResultScreen> {
     }
   }
 
+  // Build medication verification card
+  Widget _buildMedicationVerificationCard() {
+    return Card(
+      elevation: 2,
+      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.help_outline,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'İlaç bilgileriniz doğru mu?',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 12),
+            
+            // Current medication name display
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.medication,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _currentMedication.name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Verification radio buttons
+            Text(
+              'Bu ilaç adı doğru mu?',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            
+            const SizedBox(height: 8),
+            
+            Row(
+              children: [
+                Expanded(
+                  child: RadioListTile<bool>(
+                    title: const Text('Evet'),
+                    value: true,
+                    groupValue: _isMedicationCorrect,
+                    onChanged: (value) {
+                      setState(() {
+                        _isMedicationCorrect = value;
+                        _showCorrectionField = false;
+                        _correctionController.clear();
+                      });
+                      // Evet seçilince geçmişe kaydet
+                      _addToHistoryIfCorrect();
+                    },
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+                Expanded(
+                  child: RadioListTile<bool>(
+                    title: const Text('Hayır'),
+                    value: false,
+                    groupValue: _isMedicationCorrect,
+                    onChanged: (value) {
+                      setState(() {
+                        _isMedicationCorrect = value;
+                        _showCorrectionField = true;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ),
+              ],
+            ),
+            
+            // Correction text field
+            if (_showCorrectionField) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Ambalaj üzerinde yazan tam ilaç adı:',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _correctionController,
+                decoration: InputDecoration(
+                  hintText: 'Örn: Parol 500mg, Aspirin Cardio 100mg',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.edit),
+                  suffixIcon: IconButton(
+                    onPressed: _hasValidCorrectionText ? _submitCorrection : null,
+                    icon: const Icon(Icons.send),
+                    tooltip: 'Düzelt',
+                  ),
+                ),
+                onSubmitted: (value) {
+                  if (value.trim().isNotEmpty) {
+                    _submitCorrection();
+                  }
+                },
+                textInputAction: TextInputAction.send,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Add medication to search history if correct
+  Future<void> _addToHistoryIfCorrect() async {
+    try {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      await appProvider.addToSearchHistory(_currentMedication.name);
+      _showSnackBar('İlaç geçmişe eklendi');
+    } catch (e) {
+      _showSnackBar('Geçmişe eklerken hata: $e', isError: true);
+    }
+  }
+
+  // Show info about auto-adding to history
+  void _showAutoHistorySnackBar() {
+    _showSnackBar('💡 Bilgiler doğruysa "Evet" seçin, otomatik geçmişe eklensin');
+  }
+
+  // Check if should auto-add to history on first load
+  void _checkInitialHistoryAdd() {
+    // İlk açılışta hiçbir radio seçili değilse,
+    // kullanıcıya bilgi ver ama otomatik ekleme
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && _isMedicationCorrect == null) {
+        _showSnackBar('💡 Bilgiler doğruysa "Evet" seçerek geçmişe ekleyebilirsiniz');
+      }
+    });
+  }
+
+  // Submit medication name correction
+  Future<void> _submitCorrection() async {
+    final correctedName = _correctionController.text.trim();
+    if (correctedName.isEmpty) return;
+
+    setState(() {
+      _isUpdating = true;
+    });
+
+    try {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      
+      // Create a new search request with corrected medication name
+      final request = SearchRequest(
+        medicationName: correctedName,
+        language: appProvider.language,
+      );
+
+      final response = await _apiService.searchMedication(request);
+      
+      if (response.success && response.data != null) {
+        setState(() {
+          _currentMedication = response.data!;
+          _isMedicationCorrect = null;
+          _showCorrectionField = false;
+          _correctionController.clear();
+          _hasValidCorrectionText = false;
+        });
+        _showSnackBar('İlaç bilgileri güncellendi');
+        
+        // Yeni ilaç bilgisi getirildikten sonra 
+        // user hiçbir radio seçmezse otomatik geçmişe kaydet
+        _showAutoHistorySnackBar();
+      } else {
+        _showSnackBar(response.error ?? 'Düzeltme başarısız', isError: true);
+      }
+    } catch (e) {
+      _showSnackBar('Düzeltme sırasında hata: $e', isError: true);
+    } finally {
+      setState(() {
+        _isUpdating = false;
+      });
+    }
+  }
+
   void _showSnackBar(String message, {bool isError = false}) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -156,6 +389,11 @@ class _ResultScreenState extends State<ResultScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Medication name verification
+                      _buildMedicationVerificationCard(),
+                      
+                      const SizedBox(height: 16),
+                      
                       // Verification status
                       if (!_currentMedication.isVerified)
                         Card(

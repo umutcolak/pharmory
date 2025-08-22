@@ -1,0 +1,1 @@
+ /Users/tugba/Desktop/pharmory/.dart_tool/flutter_build/3c67bc8d59feac02be67a58f54cf1406/native_assets.json: 
